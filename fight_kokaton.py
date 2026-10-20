@@ -1,3 +1,4 @@
+import math
 import os
 import random
 import sys
@@ -56,6 +57,8 @@ class Bird:
         self.img = __class__.imgs[(+5, 0)]
         self.rct: pg.Rect = self.img.get_rect()
         self.rct.center = xy
+        # こうかとんの向きを表すタプルself.dire=(+5, 0)を定義[cite: 41]
+        self.dire = (+5, 0)
 
     def change_img(self, num: int, screen: pg.Surface):
         """
@@ -82,6 +85,8 @@ class Bird:
             self.rct.move_ip(-sum_mv[0], -sum_mv[1])
         if not (sum_mv[0] == 0 and sum_mv[1] == 0):
             self.img = __class__.imgs[tuple(sum_mv)]
+            # 合計移動量sum_mvが[0, 0]でない時，self.direをsum_mvの値で更新[cite: 41]
+            self.dire = tuple(sum_mv)
         screen.blit(self.img, self.rct)
 
 
@@ -89,16 +94,28 @@ class Beam:
     """
     こうかとんが放つビームに関するクラス
     """
-    def __init__(self, bird:"Bird"):
+    def __init__(self, bird: Bird):
         """
         ビーム画像Surfaceを生成する
         引数 bird：ビームを放つこうかとん（Birdインスタンス）
         """
-        self.img = pg.image.load(f"fig/beam.png")
+        # Birdのdireにアクセスし，こうかとんが向いている方向をvx, vyに代入[cite: 41]
+        self.vx, self.vy = bird.dire
+
+        # math.atan2(-vy, vx)で，直交座標(x, -y)から極座標の角度Θに変換[cite: 41]
+        theta = math.atan2(-self.vy, self.vx)
+        # math.degrees(Θ)で弧度法から度数法に変換[cite: 41]
+        angle = math.degrees(theta)
+
+        # rotozoomで回転[cite: 41]
+        self.img = pg.transform.rotozoom(pg.image.load("fig/beam.png"), angle, 1.0)
         self.rct = self.img.get_rect()
-        self.rct.centery = bird.rct.centery  # ビームの中心縦座標 = こうかとんの中心縦座標
-        self.rct.left = bird.rct.right  # ビームの左座標 = こうかとんの右座標
-        self.vx, self.vy = +5, 0
+
+        # こうかとんのrctのwidthとheightおよび向いている方向を考慮した初期配置[cite: 41]
+        # ビームの中心横座標＝こうかとんの中心横座標＋こうかとんの横幅×ビームの横速度÷5[cite: 41]
+        # ビームの中心縦座標＝こうかとんの中心縦座標＋こうかとんの高さ×ビームの縦速度÷5[cite: 41]
+        self.rct.centerx = bird.rct.centerx + bird.rct.width * self.vx // 5
+        self.rct.centery = bird.rct.centery + bird.rct.height * self.vy // 5
 
     def update(self, screen: pg.Surface):
         """
@@ -107,7 +124,7 @@ class Beam:
         """
         if check_bound(self.rct) == (True, True):
             self.rct.move_ip(self.vx, self.vy)
-            screen.blit(self.img, self.rct)    
+            screen.blit(self.img, self.rct)
 
 
 class Bomb:
@@ -120,7 +137,7 @@ class Bomb:
         引数1 color：爆弾円の色タプル
         引数2 rad：爆弾円の半径
         """
-        self.img = pg.Surface((2*rad, 2*rad))
+        self.img = pg.Surface((2 * rad, 2 * rad))
         pg.draw.circle(self.img, color, (rad, rad), rad)
         self.img.set_colorkey((0, 0, 0))
         self.rct = self.img.get_rect()
@@ -141,17 +158,43 @@ class Bomb:
         screen.blit(self.img, self.rct)
 
 
+class Score:
+    """
+    打ち落とした爆弾の数を表示するスコアクラス
+    """
+    def __init__(self):
+        # フォントの設定[cite: 38]
+        self.fonto = pg.font.Font(None, 50)
+        # 文字色の設定：青 → (0, 0, 255)[cite: 38]
+        self.color = (0, 0, 255)
+        # スコアの初期値の設定：0[cite: 38]
+        self.score = 0
+        # 文字列Surfaceの生成[cite: 38]
+        self.img = self.fonto.render(f"Score: {self.score}", 0, self.color)
+        # 文字列の中心座標：画面左下(横座標：100，縦座標：画面下部から50)[cite: 38]
+        self.rct = self.img.get_rect()
+        self.rct.center = (100, HEIGHT - 50)
+
+    def update(self, screen: pg.Surface):
+        """
+        現在のスコアを表示させる文字列Surfaceを生成し，画面に描画する[cite: 38]
+        引数 screen：画面Surface
+        """
+        self.img = self.fonto.render(f"Score: {self.score}", 0, self.color)
+        screen.blit(self.img, self.rct)
+
+
 def main():
     pg.display.set_caption("たたかえ！こうかとん")
-    screen = pg.display.set_mode((WIDTH, HEIGHT))    
+    screen = pg.display.set_mode((WIDTH, HEIGHT))
     bg_img = pg.image.load("fig/pg_bg.jpg")
     bird = Bird((300, 200))
-    # bomb = Bomb((255, 0, 0), 10)
-    # bombs = []
-    # for _ in range(NUM_OF_BOMBS):
-    #     bombs.append(Bomb((255, 0, 0), 10))
     bombs = [Bomb((255, 0, 0), 10) for _ in range(NUM_OF_BOMBS)]
     beam = None  # ゲーム初期化時にはビームは存在しない
+    
+    # (初期化) Scoreインスタンスの生成[cite: 38]
+    score = Score()
+
     clock = pg.time.Clock()
     tmr = 0
     while True:
@@ -160,7 +203,7 @@ def main():
                 return
             if event.type == pg.KEYDOWN and event.key == pg.K_SPACE:
                 # スペースキー押下でBeamクラスのインスタンス生成
-                beam = Beam(bird)            
+                beam = Beam(bird)
         screen.blit(bg_img, [0, 0])
 
         for bomb in bombs:
@@ -169,7 +212,7 @@ def main():
                 bird.change_img(8, screen)
                 fonto = pg.font.Font(None, 80)
                 txt = fonto.render("Game Over", True, (255, 0, 0))
-                screen.blit(txt, [WIDTH//2-150, HEIGHT//2])
+                screen.blit(txt, [WIDTH // 2 - 150, HEIGHT // 2])
                 pg.display.update()
                 time.sleep(1)
                 return
@@ -179,16 +222,24 @@ def main():
                 if beam.rct.colliderect(bomb.rct):  # ビームと爆弾の衝突判定
                     beam = None
                     bombs[i] = None
+                    
+                    # (ループ) 爆弾を打ち落としたらスコアアップ（1点）[cite: 38]
+                    score.score += 1
+
                     bird.change_img(6, screen)  # よろこびエフェクト
-                    pg.display.update()                    
+                    pg.display.update()
         bombs = [bomb for bomb in bombs if bomb is not None]  # Noneを取り除く
 
         key_lst = pg.key.get_pressed()
         bird.update(key_lst, screen)
         if beam is not None:
-            beam.update(screen)  
-        for bomb in bombs: 
+            beam.update(screen)
+        for bomb in bombs:
             bomb.update(screen)
+
+        # (ループ) updateメソッドを呼び出してスコアを描画[cite: 38]
+        score.update(screen)
+
         pg.display.update()
         tmr += 1
         clock.tick(50)
